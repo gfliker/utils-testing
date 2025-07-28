@@ -332,20 +332,40 @@ terragrunt run-all apply --terragrunt-include-dir="stg/**"
 
 ## Deployment
 
-### Step 1: Deploy Global Resources (Optional)
-Deploy organization and account-wide resources first:
+### Step 1: Deploy Global Resources
+Deploy infrastructure resources in the following order:
+
+#### Organization-Wide Resources (Deploy Once)
 ```bash
-# Deploy organization-wide resources
-cd infrastructure-live/_global
-terragrunt run-all apply
+# Deploy CloudTrail for audit logging
+cd infrastructure-live/_global/cloudtrail
+terragrunt apply
+```
 
-# Deploy production account resources
-cd infrastructure-live/prd/_global
-terragrunt run-all apply
+#### Regional Resources (Deploy per Region)
+```bash
+# Deploy ECR repository for container images
+cd infrastructure-live/prd/us-east-1/_global/ecr
+terragrunt apply
 
-# Deploy regional resources (ECR for container images)
-cd infrastructure-live/prd/us-east-1/_global
-terragrunt apply -target=ecr
+# Deploy SNS topic for alerts and notifications
+cd infrastructure-live/prd/us-east-1/_global/sns
+terragrunt apply
+
+# Repeat for other regions if needed
+cd infrastructure-live/prd/us-west-1/_global/ecr
+terragrunt apply
+```
+
+#### Deploy All Global Resources at Once (Alternative)
+```bash
+# Deploy all global resources for production
+cd infrastructure-live
+terragrunt run-all apply --terragrunt-include-dir="_global/**"
+terragrunt run-all apply --terragrunt-include-dir="prd/*/_global/**"
+
+# Deploy all global resources for staging
+terragrunt run-all apply --terragrunt-include-dir="stg/*/_global/**"
 ```
 
 ### Step 2: Build and Push Docker Image
