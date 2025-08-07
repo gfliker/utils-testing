@@ -1,0 +1,217 @@
+name: Clean Self-Hosted ECS Runner
+
+on:
+  workflow_dispatch:
+    inputs:
+      load_test_enabled:
+        description: 'Enable load testing (creates multiple parallel jobs)'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
+
+jobs:
+  test-runner:
+    name: Test ECS Self-Hosted Runner
+    runs-on: [self-hosted, linux, x64]
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Display runner information
+      run: |
+        echo "Runner Information:"
+        echo "Runner name: $RUNNER_NAME"
+        echo "Runner OS: $RUNNER_OS"
+        echo "Runner architecture: $RUNNER_ARCH"
+        echo "Hostname: $(hostname)"
+        echo "Current user: $(whoami)"
+        echo "Working directory: $(pwd)"
+        
+    - name: Check system resources
+      run: |
+        echo "System Resources:"
+        echo "CPU info:"
+        cat /proc/cpuinfo | head -5
+        echo "Memory info:"
+        free -h
+        echo "Disk usage:"
+        df -h /
+        
+    - name: Test Docker availability
+      run: |
+        echo "Docker Information:"
+        docker --version || echo "Docker not available"
+        docker info || echo "Docker daemon not accessible"
+        
+    - name: Simple build test
+      run: |
+        echo "Simple Build Test:"
+        echo "Creating a test file..."
+        echo "Hello from ECS self-hosted runner!" > test-file.txt
+        echo "File contents:"
+        cat test-file.txt
+        echo "Test completed successfully!"
+        
+    - name: Cleanup
+      run: |
+        echo "Cleanup:"
+        rm -f test-file.txt
+        echo "Cleanup completed"
+
+  load-test:
+    name: Load Test Job ${{ matrix.job_id }}
+    runs-on: [self-hosted, ecs, linux]
+    if: github.event.inputs.load_test_enabled == 'true'
+    
+    strategy:
+      matrix:
+        job_id: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+      fail-fast: false
+      max-parallel: 10
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Job identification
+      run: |
+        echo "Load Test Job #${{ matrix.job_id }}"
+        echo "Runner: $(hostname)"
+        echo "Job started at: $(date)"
+        echo "GitHub Run ID: $GITHUB_RUN_ID"
+        echo "Job ID: ${{ matrix.job_id }}"
+        
+    - name: CPU intensive task
+      run: |
+        echo "CPU Intensive Task - Job ${{ matrix.job_id }}"
+        
+        # CPU stress test using bash math for 2 minutes
+        echo "Starting CPU stress test..."
+        timeout 120s bash -c '
+          while true; do
+            # Use bash arithmetic to create CPU load
+            for i in {1..10000}; do
+              result=$((i * i * i + i * 2 + 1))
+            done &
+            for i in {1..10000}; do
+              result=$((i * i * i + i * 2 + 1))
+            done &
+            sleep 1
+            jobs | wc -l
+          done
+        ' || echo "CPU stress test completed"
+        
+        # Clean up background jobs
+        jobs -p | xargs -r kill 2>/dev/null || true
+        echo "CPU stress test finished for job ${{ matrix.job_id }}"
+        
+    - name: Memory allocation test
+      run: |
+        echo "Memory Allocation Test - Job ${{ matrix.job_id }}"
+        
+        # Allocate memory using shell commands and dd
+        echo "Allocating memory in chunks..."
+        TEMP_DIR="/tmp/memory-test-${{ matrix.job_id }}-$$"
+        mkdir -p "$TEMP_DIR"
+        
+        # Allocate memory by creating files in tmpfs (RAM)
+        for i in {1..10}; do
+          echo "Allocating chunk $i/10 (100MB each)"
+          # Create 100MB file in memory
+          dd if=/dev/zero of="$TEMP_DIR/memory-chunk-$i" bs=1M count=100 2>/dev/null
+          
+          # Show current memory usage
+          echo "Memory usage after chunk $i:"
+          free -h
+          
+          # Brief pause between allocations
+          sleep 3
+        done
+        
+        echo "Memory allocation completed. Total allocated: ~1GB"
+        echo "Final memory status:"
+        free -h
+        
+        # Keep memory allocated for a bit to simulate usage
+        echo "Holding memory for 30 seconds..."
+        sleep 30
+        
+        # Cleanup - free the allocated memory
+        rm -rf "$TEMP_DIR"
+        echo "Memory freed. Final status:"
+        free -h
+        echo "Memory allocation test completed for job ${{ matrix.job_id }}"
+        
+    - name: Simulated build process
+      run: |
+        echo "Simulated Build Process - Job ${{ matrix.job_id }}"
+        
+        # Simulate a typical build process
+        BUILD_DIR="/tmp/build-${{ matrix.job_id }}-$$"
+        mkdir -p "$BUILD_DIR"
+        cd "$BUILD_DIR"
+        
+        # Create mock source files
+        echo "Creating mock source files..."
+        for i in {1..100}; do
+          echo "console.log('Hello from file $i');" > "file$i.js"
+        done
+        
+        # Simulate compilation/bundling
+        echo "Simulating compilation..."
+        cat *.js > bundle.js
+        
+        # Simulate running tests
+        echo "Simulating test execution..."
+        sleep 30
+        
+        # Create build artifacts
+        echo "Creating build artifacts..."
+        tar -czf "build-artifacts-${{ matrix.job_id }}.tar.gz" *.js
+        
+        # Cleanup
+        cd /tmp
+        rm -rf "$BUILD_DIR"
+        echo "Build simulation completed for job ${{ matrix.job_id }}"
+        
+    - name: Job completion summary
+      run: |
+        echo "Load Test Job #${{ matrix.job_id }} Completed"
+        echo "Completion time: $(date)"
+        echo "Runner: $(hostname)"
+        
+        # System status after load test
+        echo "System status after load test:"
+        echo "Memory usage:"
+        free -h
+        echo "Load average:"
+        uptime
+        echo "Disk usage:"
+        df -h /tmp
+
+  load-test-summary:
+    name: Load Test Summary
+    runs-on: ubuntu-latest
+    needs: [load-test]
+    if: always() && github.event.inputs.load_test_enabled == 'true'
+    
+    steps:
+    - name: Load test results summary
+      run: |
+        echo "Load Test Summary"
+        echo "Load test jobs: 5 parallel jobs executed"
+        echo "Load test status: ${{ needs.load-test.result }}"
+        
+        if [ "${{ needs.load-test.result }}" == "success" ]; then
+          echo "All load test jobs completed successfully!"
+        elif [ "${{ needs.load-test.result }}" == "failure" ]; then
+          echo "Some load test jobs failed"
+        else
+          echo "Load test completed with status: ${{ needs.load-test.result }}"
+        fi
+        
+        echo "Check individual job logs for detailed performance metrics"
