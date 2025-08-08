@@ -64,7 +64,7 @@ jobs:
 
   load-test:
     name: Load Test Job ${{ matrix.job_id }}
-    runs-on: [self-hosted, ecs, linux]
+    runs-on: [self-hosted, linux, x64]
     if: github.event.inputs.load_test_enabled == 'true'
     
     strategy:
@@ -195,7 +195,7 @@ jobs:
 
   load-test-summary:
     name: Load Test Summary
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64]
     needs: [load-test]
     if: always() && github.event.inputs.load_test_enabled == 'true'
     
